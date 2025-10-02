@@ -1,0 +1,98 @@
+;;;; zmq/extension.lisp
+
+(named-readtables:in-readtable coalton:coalton)
+
+(in-package #:zmq)
+
+(coalton-toplevel
+
+  (declare finalize-message (Message -> Unit))
+  (define (finalize-message message)
+    (lisp Unit (message)
+      (cl:let ((finalizer #'(cl:lambda () (zmq-cffi:zmq-msg-close message))))
+        (trivial-garbage:finalize message finalizer)
+        Unit)))
+
+  (declare send (Into :t (List Message) => Socket -> :t -> Result ZMQError Unit))
+  (define (send skt msg)
+    (rec sendeach ((parts (into msg)))
+      (match parts
+        ((Nil)
+         (Err ENOTSUP))
+        ((Cons last (Nil))
+         (match  (zmq-msg-send last skt mempty)
+           ((Ok _) (Ok Unit))
+           ((Err e) (Err e))))
+        ((Cons next rest)
+         (match (zmq-msg-send next skt ZMQ-SNDMORE)
+           ((Ok _) (sendeach rest))
+           ((Err e) (Err e)))))))
+
+  (declare recv (Into (List Message) :t => Socket -> Result ZMQError :t))
+  (define (recv skt)
+    (rec recveach ((parts Nil))
+      (let part = (new-message))
+      (zmq-msg-init part)
+      (match (zmq-msg-recv part skt mempty)
+        ((Ok _)
+         (let parts = (Cons part parts))
+         (cond
+           ((zmq-msg-more part)
+            (recveach parts))
+           (True
+            (dolist (part parts) (finalize-message part))
+            (Ok (into (reverse parts))))))
+        ((Err e)
+         (Err e)))))
+
+  (declare sendmore (Into :t (List Message) => Socket -> :t -> Result ZMQError Unit))
+  (define (sendmore skt msg)
+    (rec sendeach ((parts (into msg)))
+      (match parts
+        ((Nil)
+         (Err ENOTSUP))
+        ((Cons last (Nil))
+         (match  (zmq-msg-send last skt ZMQ-SNDMORE)
+           ((Ok _) (Ok Unit))
+           ((Err e) (Err e))))
+        ((Cons next rest)
+         (match (zmq-msg-send next skt ZMQ-SNDMORE)
+           ((Ok _) (sendeach rest))
+           ((Err e) (Err e)))))))
+
+  (declare recvnow (Into (List Message) :t => Socket -> Optional (Result ZMQError :t)))
+  (define (recvnow skt)
+    (let (Tuple items item-list) = (new-pollitem-array 1))
+    (let item = (list:nth 0 item-list))
+    (set-pollitem-slots item skt 0 ZMQ-POLLIN mempty)
+    (zmq-poll items 1 0)
+    (let recv? = (bitfield-member? ZMQ-POLLIN (pollitem-revents item)))
+    (free items)
+    (if recv? (Some (recv skt)) None))
+
+  (declare recvall (Into (List Message) :t => Socket -> List :t))
+  (define (recvall skt)
+    (rec getnext ((ret Nil))
+      (match (recvnow skt)
+        ((Some (Ok x)) (getnext (Cons x ret)))
+        ((Some (Err _)) (getnext ret))
+        ((None) (reverse ret)))))
+
+  (declare subscribe (Into :t Message => Socket -> :t -> Result ZMQError Unit))
+  (define (subscribe skt sub)
+    (let msg = (into sub))
+    (let optval = (zmq-msg-data msg))
+    (let optvallen = (zmq-msg-size msg))
+    (let rc = (zmq-setsockopt skt ZMQ-SUBSCRIBE optval optvallen))
+    (zmq-msg-close msg)
+    rc)
+
+  (declare unsubscribe (Into :t Message => Socket -> :t -> Result ZMQError Unit))
+  (define (unsubscribe skt sub)
+    (let msg = (into sub))
+    (let optval = (zmq-msg-data msg))
+    (let optvallen = (zmq-msg-size msg))
+    (let rc = (zmq-setsockopt skt ZMQ-UNSUBSCRIBE optval optvallen))
+    (zmq-msg-close msg)
+    rc))
+
