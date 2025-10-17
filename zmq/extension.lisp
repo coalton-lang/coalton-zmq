@@ -9,7 +9,8 @@
   (declare finalize-message (Message -> Unit))
   (define (finalize-message message)
     (lisp Unit (message)
-      (cl:let ((finalizer #'(cl:lambda () (zmq-cffi:zmq-msg-close message))))
+      (cl:let* ((msgcpy (cffi:make-pointer (cffi:pointer-address message)))
+                (finalizer #'(cl:lambda () (zmq-cffi:zmq-msg-close msgcpy))))
         (trivial-garbage:finalize message finalizer)
         Unit)))
 
