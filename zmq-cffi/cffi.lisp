@@ -435,5 +435,5 @@
   (items_ (:pointer (:struct zmq-pollitem-t)))
   (nitems_ :int)
   (timeout_ :long)
-  (sigmask_ (:pointer #-WIN32 sigset-t #+WIN32 :void)))
+  (sigmask_ (:pointer #-WIN32 (:struct sigset-t) #+WIN32 :void)))
 

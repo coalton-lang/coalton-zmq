@@ -14,7 +14,7 @@
 ;; (ctype zmq-timer-fn "zmq_timer_fn")
 (ctype uint32-t    "uint32_t")
 (ctype uint64-t    "uint64_t")
-#-WIN32 (ctype sigset-t "sigset_t")
+#-WIN32 (cstruct sigset-t "sigset_t")
 (cstruct zmq-msg-t "zmq_msg_t")
 (cstruct zmq-pollitem-t "zmq_pollitem_t"
          (socket  "socket"  :type (:pointer :void))
